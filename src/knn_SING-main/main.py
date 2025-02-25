@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 
 from scipy.sparse.csgraph import connected_components
+from scipy.spatial.distance import pdist, squareform
 from scipy.spatial import cKDTree
 import gudhi
 from compare import *
@@ -21,51 +22,55 @@ def core_dist(points, k):
         dists.append(ds[-1])
     return dists
 
-def computeAvgKNNProximityDistances(points, k_nn=5, write=False, filename=""):
+def computeAvgKNNProximityDistances(points, k_nn=5, write=False, filename="", density=0.0):
     """
-    Compute a normalized proximity distance matrix using an average kNN estimator.
-    
-    For each point a, we define:
-    
-         knn(a) = average_{i=1}^{k_nn} (distance from a to its i-th nearest neighbor)
-    
-    Then, for any two points a and b, the normalized distance is computed as:
-    
-         d_norm(a,b) = Euclidean_distance(a,b) / (knn(a) + knn(b))
-    
-    Parameters:
-      points : list or array of 2D points.
-      k_nn   : int, number of nearest neighbors to use.
-      write  : bool, if True, the full distance matrix is saved to a file.
-      filename: str, file name to save if write==True.
-      
+    Compute a normalized proximity distance matrix using an average kNN estimator and
+    a density ratio term.
+
+    For each point a, define:
+      knn(a) = average Euclidean distance from a to its k_nn nearest neighbors (excluding itself).
+
+    Then, for any two points a and b, compute:
+      d_norm(a,b) = Euclidean_distance(a,b) / (knn(a) + knn(b))
+      R(a,b) = max(knn(a), knn(b)) / min(knn(a), knn(b))
+      d_final(a,b) = d_norm(a,b) * R(a,b).
+
+    An edge will be included in the proximity graph if d_final(a,b) < epsilon.
+
     Returns:
-      dist_mat : full symmetric normalized distance matrix.
-      lower_tri: list of lists containing the lower-triangular part (for persistence computation).
+      final_norm_D : full symmetric matrix of final normalized distances.
+      lower_tri    : list of lists containing the lower-triangular part.
     """
     n = len(points)
     points_arr = np.array(points)
-    # Build a KD-tree for fast neighbor queries.
+    # Build KD-tree for fast neighbor queries.
     tree = cKDTree(points_arr)
-    # Query k_nn+1 neighbors for each point (the first neighbor is the point itself with distance 0).
+    # Query k_nn+1 nearest neighbors (first neighbor is self with distance 0).
     distances, indices = tree.query(points_arr, k=k_nn+1)
-    # Average the distances from index 1 to k_nn (exclude the self-distance at index 0).
-    avg_knn = np.mean(distances[:, 1:], axis=1)  # shape: (n,)
-    
-    # Compute full pairwise Euclidean distance matrix.
+    # Compute average distance (excluding self).
+    avg_knn = np.mean(distances[:, 1:], axis=1)  # shape (n,)
+
+    # Compute the full pairwise Euclidean distance matrix.
     D = squareform(pdist(points_arr, metric='euclidean'))
-    # Compute pairwise sum of the knn estimates.
+    # Compute initial normalized distance: d_norm = D / (knn(a) + knn(b))
     sum_knn = avg_knn[:, None] + avg_knn[None, :]
-    # Compute normalized distance matrix.
     norm_D = D / sum_knn
     
-    # Build lower-triangular list.
-    lower_tri = [list(norm_D[i, :i]) for i in range(n)]
+    # Compute the density ratio for each pair:
+    # R(a,b) = max(knn(a), knn(b)) / min(knn(a), knn(b))
+    ratio_matrix = (np.maximum(avg_knn[:, None], avg_knn[None, :]) / np.minimum(avg_knn[:, None], avg_knn[None, :])) ** density
+    
+    # Final normalized distance matrix:
+    final_norm_D = norm_D * ratio_matrix
+    
+    # Build lower triangular list.
+    lower_tri = [list(final_norm_D[i, :i]) for i in range(n)]
     
     if write:
-        np.savetxt(filename, norm_D, delimiter=",")
+        np.savetxt(filename, final_norm_D, delimiter=",")
     
-    return norm_D, lower_tri
+    return final_norm_D, lower_tri
+
 
 ##### circle metric SING computation
 def computeSINGCircleDistances(points, radii, write=False, filename = ""):
@@ -189,13 +194,13 @@ def processBasicDiskFile(filename, epsilon = 1.0, shouldDraw = True, shouldDrawE
 
 # process stipple file, that only contains 2D coordinates
 
-def processStippleFile(filename, k_nn=5, epsilon = 1.0, shouldDraw = False, shouldDrawEdges = False):
+def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, shouldDraw = False, shouldDrawEdges = False):
     
     points, xs, ys = readStipplefile(filename)
 
     # compute the pair-wise distances 
 
-    dist_mat, lower_tri = computeAvgKNNProximityDistances(points, k_nn=k_nn, filename= filename + "_distmat.txt", write = False)
+    dist_mat, lower_tri = computeAvgKNNProximityDistances(points, k_nn=k_nn, filename= filename + "_distmat.txt", write = False, density=density)
     
     # visualisation for the points, the clusters, and possibly the edges
 
@@ -211,7 +216,7 @@ def processStippleFile(filename, k_nn=5, epsilon = 1.0, shouldDraw = False, shou
         n_components, labels = connected_components(csgraph=adj_mat, directed=False, return_labels=True)
         print(f"Number of components: {n_components}")
         
-        drawPoints(plt, points, n_components, labels, 2, ax)
+        drawPoints(plt, points, n_components, labels, 0.1, ax)
 
         # save_labels(filename+"_SING.txt", points, labels)
         
@@ -230,6 +235,7 @@ if __name__ == "__main__":
     parser.add_argument("--epsilon", type=float, default=1.0, help="Epsilon value for SING")
     parser.add_argument("--drawEdges", type=bool, default=False, help="Draw SING edges")
     parser.add_argument("--k_nn", type=int, default=5, help="Number of nearest neighbors for distance computation")
+    parser.add_argument("--density", type=float, default=0.0, help="density term for proximity metrics")
     args = parser.parse_args()
 
     filename = args.filename
@@ -237,6 +243,7 @@ if __name__ == "__main__":
     epsilon = args.epsilon
     shouldDrawEdges = args.drawEdges
     k_nn = args.k_nn
+    density = args.density
 
     shouldDraw = True
 
@@ -244,7 +251,7 @@ if __name__ == "__main__":
 
     distance_matrix = []    
     if filetype == "stipples":
-        points, distance_matrix, lower_tri = processStippleFile(filename, k=k_nn, epsilon=epsilon, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges)
+        points, distance_matrix, lower_tri = processStippleFile(filename, k_nn=k_nn, density=density, epsilon=epsilon, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges)
     elif filetype == "species":
         points, radii, distance_matrix, lower_tri = processDiskFile(filename, epsilon, shouldDrawEdges = shouldDrawEdges)
     elif filetype == "disks":
