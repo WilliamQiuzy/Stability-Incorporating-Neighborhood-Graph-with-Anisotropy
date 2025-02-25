@@ -3,10 +3,7 @@ from collections import Counter
 from draw import *
 from sklearn.cluster import DBSCAN
 
-def euclidean_distance(a, b):
-    a = np.array(a)
-    b = np.array(b)
-    return np.linalg.norm(a - b)
+
 
 def distF(a, b, r_a, r_b):
     if(r_a < r_b):
