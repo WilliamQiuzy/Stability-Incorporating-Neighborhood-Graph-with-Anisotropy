@@ -57,22 +57,31 @@ def get_data_bounds( points):
     return min(all_x)-pointsize, max(all_x)+pointsize, min(all_y)-pointsize, max(all_y)+pointsize
 
 
-def drawPoints(plt, points, n_components, labels, size=0.7, ax=None):
-    color = cm.rainbow(np.linspace(0, 1, n_components))
-    np.random.shuffle(color)
-    x = [point[0] for point in points]
-    y = [point[1] for point in points]
+def drawPoints(plt_obj, points, n_components, labels, size=0.7, ax=None):
+    from matplotlib import cm
+    # If there are no clusters, assign a default color array.
+    if n_components <= 0:
+        color = np.array(['gray'])
+    else:
+        color = cm.rainbow(np.linspace(0, 1, n_components))
+        np.random.shuffle(color)
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
     color_labels = []
     
-    for index, point in enumerate(points):
-        if(n_components==1):
-            index=0
-        color_labels.append(color[(int)(labels[index])])
+    for idx, label in enumerate(labels):
+        if label == -1:
+            color_labels.append('gray')
+        else:
+            # Use modulo in case label is outside the expected range.
+            color_labels.append(color[int(label) % len(color)])
         
-    plt.scatter(x, y, s=size, color=color_labels)
+    ax.scatter(xs, ys, s=size, color=color_labels)
     
+    # Assuming get_data_bounds is defined elsewhere:
     min_x, max_x, min_y, max_y = get_data_bounds(points)
     ax.set_aspect('equal', 'box')
     ax.set_xlim(min_x, max_x)
     ax.set_ylim(min_y, max_y)
+
 
