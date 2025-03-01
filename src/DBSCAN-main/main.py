@@ -144,7 +144,7 @@ def processStippleFile(filename, epsilon=1.0, min_samples=5, shouldDraw=True, sh
     # Visualization
     if shouldDraw:
         plt_obj, ax = createBasicPlot()
-        drawPoints(plt_obj, points, n_clusters, labels, 2, ax)
+        drawPoints(plt_obj, points, n_clusters, labels, 0.1, ax)
         plt_obj.title("DBSCAN Clustering (Stipple File)")
         plt_obj.show()
 
@@ -190,8 +190,8 @@ def main():
 
     # If you still want to compute a persistence diagram, it won't be meaningful for the DBSCAN approach,
     # but we keep it for consistency with your existing pipeline:
-    diag = compute_persistence_diagram(distance_matrix)
-    barcode = gudhi.plot_persistence_barcode(diag)
+    # diag = compute_persistence_diagram(distance_matrix)
+    # barcode = gudhi.plot_persistence_barcode(diag)
     plt.show()
 
 if __name__ == "__main__":

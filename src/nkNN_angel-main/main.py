@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 
 from scipy.sparse.csgraph import connected_components
+from scipy.spatial.distance import pdist, squareform
 from scipy.spatial import cKDTree
 import gudhi
 from compare import *
@@ -12,6 +13,7 @@ import argparse
 import random
 
 
+
 # core distance
 def core_dist(points, k):
     tree = cKDTree(points)
@@ -21,27 +23,87 @@ def core_dist(points, k):
         dists.append(ds[-1])
     return dists
 
-# Mutual Reachability Distance computation
-def computeMRDistances(points, k, filename="", write=False, density=0.0):
-    tree = cKDTree(points)
-    lower_tri = []
-    dist_mat = np.zeros((len(points), len(points)))
+from sklearn.decomposition import PCA
+from scipy.spatial import cKDTree
+import numpy as np
 
-    core_dists = core_dist(points, k)
+def compute_angle(points, k_nn=5):
+    """
+    Compute the principal direction angle for each point based on its k_nn nearest neighbors,
+    using PCA from scikit-learn.
 
-    for i, point in enumerate(points):
-        dists = []
-        for j in range(0,i):
-            distance = max(core_dists[i], core_dists[j], np.linalg.norm(point - points[j]))
-            dist_mat[i][j] = distance
-            dist_mat[j][i] = distance
-            dists.append(distance)
-        lower_tri.append(dists)
+    Parameters:
+      points : list of 2D points.
+      k_nn   : int, number of nearest neighbors (excluding the point itself) to use.
 
+    Returns:
+      angles : numpy array of shape (n,), with each value in [0, pi).
+    """
+    n = len(points)
+    points_arr = np.array(points)
+    tree = cKDTree(points_arr)
+    # Query k_nn+1 neighbors (first neighbor is the point itself)
+    _, indices = tree.query(points_arr, k=k_nn+1)
+    angles = np.zeros(n)
+    
+    # Create a PCA object; we only need the first component.
+    pca = PCA(n_components=1)
+    
+    for i in range(n):
+        # Exclude the point itself
+        neighbor_idx = indices[i][:]
+        neighbors = points_arr[neighbor_idx]
+        # Center the data (PCA in sklearn automatically centers the data)
+        pca.fit(neighbors)
+        principal = pca.components_[0]
+        theta = np.arctan2(principal[1], principal[0])
+        if theta < 0:
+            theta += np.pi
+        angles[i] = theta
+    return angles
+
+
+
+def computeAvgKNNProximityDistances(points, k_nn=5, write=False, filename="", density=0.0, alpha=0.1, gamma=0.5):
+    n = len(points)
+    points_arr = np.array(points)
+    # Build KD-tree for fast neighbor queries.
+    tree = cKDTree(points_arr)
+    # Query k_nn+1 nearest neighbors (first is self with distance 0).
+    distances, indices = tree.query(points_arr, k=k_nn+1)
+    # Compute average distance (excluding self).
+    avg_knn = np.mean(distances[:, 1:], axis=1)  # shape (n,)
+    
+    # Compute principal direction angles for each point.
+    angles = compute_angle(points, k_nn=k_nn)  # array of shape (n,), in [0, pi)
+    
+    # Compute full pairwise Euclidean distance matrix.
+    D = squareform(pdist(points_arr, metric='euclidean'))
+    # Compute initial normalized distance: d_norm = D / (knn(a) + knn(b))
+    sum_knn = avg_knn[:, None] + avg_knn[None, :]
+    norm_D = D / sum_knn
+    
+    # Compute the density ratio for each pair:
+    # R(a,b) = (max(knn(a), knn(b)) / min(knn(a), knn(b)))^(density)
+    ratio_matrix = (np.maximum(avg_knn[:, None], avg_knn[None, :]) / 
+                    np.minimum(avg_knn[:, None], avg_knn[None, :]))**density
+    
+    angle_diff = np.abs(angles[:, None] - angles[None, :])
+    angle_diff = np.minimum(angle_diff, np.pi - angle_diff)
+    anisotropic_multiplier = gamma + (1 - gamma) * np.sin(angle_diff)
+    
+    # Final normalized distance matrix:
+    # final_norm_D = norm_D * ratio_matrix * anisotropic_multiplier
+    final_norm_D = norm_D * anisotropic_multiplier
+    
+    # Build lower triangular list.
+    lower_tri = [list(final_norm_D[i, :i]) for i in range(n)]
+    
     if write:
-        np.savetxt(filename, dist_mat, delimiter=",")
+        np.savetxt(filename, final_norm_D, delimiter=",")
+    
+    return final_norm_D, lower_tri
 
-    return dist_mat, lower_tri
 
 ##### circle metric SING computation
 def computeSINGCircleDistances(points, radii, write=False, filename = ""):
@@ -165,13 +227,13 @@ def processBasicDiskFile(filename, epsilon = 1.0, shouldDraw = True, shouldDrawE
 
 # process stipple file, that only contains 2D coordinates
 
-def processStippleFile(filename, k=5, epsilon = 1.0, density = 0.0, shouldDraw = False, shouldDrawEdges = False):
+def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, shouldDraw = False, shouldDrawEdges = False):
     
     points, xs, ys = readStipplefile(filename)
 
     # compute the pair-wise distances 
 
-    dist_mat, lower_tri = computeMRDistances(points, k=k, filename= filename + "_distmat.txt", write = False, density=density)
+    dist_mat, lower_tri = computeAvgKNNProximityDistances(points, k_nn=k_nn, filename= filename + "_distmat.txt", write = False, density=density)
     
     # visualisation for the points, the clusters, and possibly the edges
 
@@ -204,17 +266,17 @@ if __name__ == "__main__":
     parser.add_argument("--filename", type=str, help="The name of the file to process")
     parser.add_argument("--filetype", type=str, choices=["stipples", "species", "disks"], help="The type of the file (stipples, species, disks)")
     parser.add_argument("--epsilon", type=float, default=1.0, help="Epsilon value for SING")
-    parser.add_argument("--density", type=float, default=0.0, help="Density value for SING")
     parser.add_argument("--drawEdges", type=bool, default=False, help="Draw SING edges")
-    parser.add_argument("--k", type=int, default=5, help="Number of nearest neighbors for core distance computation")
+    parser.add_argument("--k_nn", type=int, default=5, help="Number of nearest neighbors for distance computation")
+    parser.add_argument("--density", type=float, default=0.0, help="density term for proximity metrics")
     args = parser.parse_args()
 
     filename = args.filename
     filetype = args.filetype
     epsilon = args.epsilon
-    density = args.density
     shouldDrawEdges = args.drawEdges
-    k = args.k
+    k_nn = args.k_nn
+    density = args.density
 
     shouldDraw = True
 
@@ -222,7 +284,7 @@ if __name__ == "__main__":
 
     distance_matrix = []    
     if filetype == "stipples":
-        points, distance_matrix, lower_tri = processStippleFile(filename, k=k, epsilon=epsilon, density = density, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges)
+        points, distance_matrix, lower_tri = processStippleFile(filename, k_nn=k_nn, density=density, epsilon=epsilon, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges)
     elif filetype == "species":
         points, radii, distance_matrix, lower_tri = processDiskFile(filename, epsilon, shouldDrawEdges = shouldDrawEdges)
     elif filetype == "disks":

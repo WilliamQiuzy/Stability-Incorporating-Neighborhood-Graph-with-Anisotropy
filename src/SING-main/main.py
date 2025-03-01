@@ -194,7 +194,7 @@ def processStippleFile(filename, epsilon = 1.0, density = 0.0, shouldDraw = Fals
         n_components, labels = connected_components(csgraph=adj_mat, directed=False, return_labels=True)
         print(f"Number of components: {n_components}")
         
-        drawPoints(plt, points, n_components, labels, 2, ax)
+        drawPoints(plt, points, n_components, labels, 0.1, ax)
 
         # save_labels(filename+"_SING.txt", points, labels)
         
