@@ -1,4 +1,4 @@
-# DB-SIN
+# Stability Incorporating Neighborhood Graph with Anisotropy
 This project aim to develop a new clustering algorithm based on SING. 
 
 For the three differnt algorithm, the example usages are:
