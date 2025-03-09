@@ -329,6 +329,73 @@ def extract_clusters_auto(ordering, reachability):
         cluster_id += 1
     return labels
 
+def drawOPTICSEdges(ax, X, eps, edge_threshold=0.5, color='gray', labels=None):
+    """
+    Draws edges for OPTICS: for each point in X, find all neighbors within eps (Euclidean),
+    compute the normalized distance (using the same nearest-neighbor values as in the OPTICS
+    calculation), and draw an edge if:
+      1. The normalized distance is below edge_threshold, and
+      2. (If provided) both points belong to the same cluster (labels != -1 and equal).
+    
+    Parameters:
+      ax            : matplotlib axes to draw on.
+      X             : (n_points, n_features) numpy array of data points.
+      eps           : float, the radius used for neighbor search.
+      edge_threshold: float, only draw an edge if normalized_distance < edge_threshold.
+      color         : color for the edges.
+      labels        : (optional) array of cluster labels; if provided, only draw edges
+                      between points with the same label (and non-noise).
+    """
+    # Build KD-tree and compute each point's nearest neighbor distance (excluding self)
+    tree = cKDTree(X)
+    dists_nn, _ = tree.query(X, k=2)
+    nn = dists_nn[:, 1]  # nearest neighbor distance for each point
+
+    n_points = X.shape[0]
+    for i in range(n_points):
+        neighbors = tree.query_ball_point(X[i], r=eps)
+        for j in neighbors:
+            if j <= i:
+                continue
+            # If cluster labels provided, only connect points in the same cluster (and not noise)
+            if labels is not None:
+                if labels[i] == -1 or labels[j] == -1:
+                    continue
+                if labels[i] != labels[j]:
+                    continue
+            d = np.linalg.norm(X[i] - X[j])
+            norm_d = d / (nn[i] + nn[j] + 1e-10)
+            if norm_d < edge_threshold:
+                ax.plot([X[i, 0], X[j, 0]],
+                        [X[i, 1], X[j, 1]],
+                        color=color, linewidth=0.5, alpha=0.5)
+
+
+def plotOPTICSEdges(X, eps, edge_threshold=0.5, labels=None):
+    """
+    Visualize OPTICS data by plotting points and overlaying edges computed with drawOPTICSEdges.
+    If 'labels' are provided (from the OPTICS clustering extraction), points are colored by cluster,
+    and edges are drawn only between points in the same cluster.
+    """
+    fig, ax = plt.subplots(figsize=(6,6))
+    if labels is not None:
+        unique_labels = np.unique(labels)
+        cmap = plt.cm.get_cmap("viridis", len(unique_labels))
+        for idx, lab in enumerate(unique_labels):
+            pts = X[labels == lab]
+            if lab == -1:
+                ax.scatter(pts[:, 0], pts[:, 1], s=2, c='gray', zorder=2, label="Noise")
+            else:
+                ax.scatter(pts[:, 0], pts[:, 1], s=2, c=[cmap(idx)], zorder=2, label=f"Cluster {lab}")
+    else:
+        ax.scatter(X[:, 0], X[:, 1], s=2, c='blue', zorder=2)
+    
+    drawOPTICSEdges(ax, X, eps, edge_threshold=edge_threshold, color='gray', labels=labels)
+    ax.set_aspect("equal")
+    ax.set_title("OPTICS: Edges (edge_threshold={})".format(edge_threshold))
+    ax.legend(fontsize=8)
+    plt.show()
+
 # ================================
 # Main Function
 # ================================
@@ -340,7 +407,7 @@ if __name__ == "__main__":
     parser.add_argument("--filetype", type=str, choices=["stipples", "species", "disks"], required=True, help="Input file type")
     parser.add_argument("--eps", type=float, default=0.05, help="eps for neighbor search (in original space)")
     parser.add_argument("--min_pts", type=int, default=5, help="Minimum points to form a dense region")
-    parser.add_argument("--extraction", type=str, choices=["xi", "auto", "manual"], default="auto",
+    parser.add_argument("--extraction", type=str, choices=["xi", "auto", "manual"], default="manual",
                         help="Cluster extraction method: 'xi' for xi-based, 'auto' for the automatic method, 'manual' for manual")
     parser.add_argument("--xi", type=float, default=0.05, help="Xi threshold for xi-based extraction (if used)")
     parser.add_argument("--threshold", type=float, default=0.05, help="Reachability threshold for manual extraction (if used)")
@@ -392,7 +459,6 @@ if __name__ == "__main__":
     plt.bar(range(len(ordering)), reachability_ordered, color='b')
     plt.xlabel("Ordering Index")
     plt.ylabel("Normalized Reachability Distance")
-    plt.title("OPTICS Reachability Plot (Normalized Metric)")
     plt.show()
 
     # Cluster extraction.
@@ -411,6 +477,10 @@ if __name__ == "__main__":
     drawPoints(plt_obj, points, n_clusters, labels, size=2, ax=ax)
     plt_obj.title("OPTICS Clustering Result (" + args.extraction + " extraction)")
     plt_obj.show()
+
+    # Suppose X is your (n_points,2) data and eps is your neighbor radius.
+    plotOPTICSEdges(X, eps=args.eps, edge_threshold=args.threshold)
+
 
 
 

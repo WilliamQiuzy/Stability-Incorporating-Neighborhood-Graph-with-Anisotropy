@@ -114,7 +114,7 @@ def processBasicDiskFile(filename, epsilon=1.0, shouldDraw=True, shouldDrawEdges
 #############################
 # Stipple File Processing with DBSCAN
 #############################
-
+from scipy.spatial import cKDTree
 def processStippleFile(filename, epsilon=1.0, min_samples=5, shouldDraw=True, shouldDrawEdges=False):
     """
     Process a stipple file (2D points) with DBSCAN from scikit-learn.
@@ -144,8 +144,25 @@ def processStippleFile(filename, epsilon=1.0, min_samples=5, shouldDraw=True, sh
     # Visualization
     if shouldDraw:
         plt_obj, ax = createBasicPlot()
-        drawPoints(plt_obj, points, n_clusters, labels, 0.1, ax)
-        plt_obj.title("DBSCAN Clustering (Stipple File)")
+        drawPoints(plt_obj, points, n_clusters, labels, 2, ax)
+        
+        # If requested, compute and draw edges based on epsilon neighborhood.
+        if shouldDrawEdges:
+            # Build KD-tree to query neighbors.
+            tree = cKDTree(points_arr)
+            edges = []
+            for i, point in enumerate(points_arr):
+                # Query all points within epsilon.
+                neighbors = tree.query_ball_point(point, r=epsilon)
+                for j in neighbors:
+                    # Avoid duplicate edges and self-loop.
+                    if j <= i:
+                        continue
+                    # Optionally, only draw edge if both points are in the same cluster (non-noise)
+                    if labels[i] != -1 and labels[i] == labels[j]:
+                        edges.append((i, j))
+            drawEdges(ax, edges, points)
+
         plt_obj.show()
 
     return points, distance_matrix, lower_tri

@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial.distance import pdist, squareform
@@ -64,7 +66,7 @@ def compute_angle(points, k_nn=5):
 
 
 
-def computeAvgKNNProximityDistances(points, k_nn=5, write=False, filename="", density=0.0, alpha=0.1, gamma=0.5):
+def computeAvgKNNProximityDistances(points, k_nn=5, write=False, filename="", density=0.0, gamma=0.5):
     n = len(points)
     points_arr = np.array(points)
     # Build KD-tree for fast neighbor queries.
@@ -93,8 +95,8 @@ def computeAvgKNNProximityDistances(points, k_nn=5, write=False, filename="", de
     anisotropic_multiplier = gamma + (1 - gamma) * np.sin(angle_diff)
     
     # Final normalized distance matrix:
-    # final_norm_D = norm_D * ratio_matrix * anisotropic_multiplier
-    final_norm_D = norm_D * anisotropic_multiplier
+    final_norm_D = norm_D * ratio_matrix * anisotropic_multiplier
+    # final_norm_D = norm_D * anisotropic_multiplier
     
     # Build lower triangular list.
     lower_tri = [list(final_norm_D[i, :i]) for i in range(n)]
@@ -227,19 +229,28 @@ def processBasicDiskFile(filename, epsilon = 1.0, shouldDraw = True, shouldDrawE
 
 # process stipple file, that only contains 2D coordinates
 
-def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, shouldDraw = False, shouldDrawEdges = False):
+def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, gamma=0.5, useGamma=False, shouldDraw = False, shouldDrawEdges = False):
     
     points, xs, ys = readStipplefile(filename)
 
+    points_arr = np.array(points)
+
+    # Pick a reference point index
+    ref_idx = 100
+
+    # Run the analysis
+    analyzeReferencePointDistanceWithAxis(points_arr, ref_idx=ref_idx, k_nn=5, density=0.0, gamma=0.5)
+
     # compute the pair-wise distances 
 
-    dist_mat, lower_tri = computeAvgKNNProximityDistances(points, k_nn=k_nn, filename= filename + "_distmat.txt", write = False, density=density)
+    dist_mat, lower_tri = computeAvgKNNProximityDistances(points, k_nn=k_nn, filename= filename + "_distmat.txt", write = False, density=density, gamma=gamma)
     
     # visualisation for the points, the clusters, and possibly the edges
 
     if(shouldDraw):
         plt, ax = createBasicPlot()
-        edges, adj_mat = extractSINGEdges(dist_mat, epsilon)
+        threshold = gamma if useGamma else epsilon
+        edges, adj_mat = extractSINGEdges(dist_mat, threshold)
 
         if(shouldDrawEdges):
             drawEdges(ax, edges, points)
@@ -256,6 +267,25 @@ def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, shouldDraw 
 
     return points, dist_mat, lower_tri
 
+def analyzeReferencePointDistanceWithAxis(points, ref_idx=0, k_nn=5, density=0.0, gamma=0.5):
+    """
+    1. Compute distance matrix using your custom metric (with gamma, angle-based, etc.).
+    2. Visualize distances from the reference point, plus the principal axis among its k_nn neighbors.
+    """
+    # Suppose we have your existing function:
+    # dist_mat, lower_tri = computeAvgKNNProximityDistances(...)
+    dist_mat, lower_tri = computeAvgKNNProximityDistances(
+        points, 
+        k_nn=k_nn, 
+        write=False, 
+        filename="",
+        density=density, 
+        gamma=gamma
+    )
+    
+    # Now plot
+    plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=ref_idx, k_nn=k_nn,
+                                   title=f"Distances + Axis (ref={ref_idx}, gamma={gamma})")
 
 
 
@@ -269,6 +299,10 @@ if __name__ == "__main__":
     parser.add_argument("--drawEdges", type=bool, default=False, help="Draw SING edges")
     parser.add_argument("--k_nn", type=int, default=5, help="Number of nearest neighbors for distance computation")
     parser.add_argument("--density", type=float, default=0.0, help="density term for proximity metrics")
+    parser.add_argument("--xaxis", type=str, choices=["epsilon", "gamma"], default="epsilon", 
+                        help="Choose x-axis variable for TDA (epsilon or gamma)")
+    parser.add_argument("--gamma", type=float, default=0.5, 
+                        help="Gamma value for the angle term in distance computation and as TDA x-axis if selected")
     args = parser.parse_args()
 
     filename = args.filename
@@ -277,6 +311,8 @@ if __name__ == "__main__":
     shouldDrawEdges = args.drawEdges
     k_nn = args.k_nn
     density = args.density
+    gamma = args.gamma
+    useGamma = (args.xaxis == "gamma")
 
     shouldDraw = True
 
@@ -284,7 +320,7 @@ if __name__ == "__main__":
 
     distance_matrix = []    
     if filetype == "stipples":
-        points, distance_matrix, lower_tri = processStippleFile(filename, k_nn=k_nn, density=density, epsilon=epsilon, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges)
+        points, distance_matrix, lower_tri = processStippleFile(filename, k_nn=k_nn, density=density, epsilon=epsilon, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges, gamma=gamma, useGamma=useGamma)
     elif filetype == "species":
         points, radii, distance_matrix, lower_tri = processDiskFile(filename, epsilon, shouldDrawEdges = shouldDrawEdges)
     elif filetype == "disks":
@@ -292,7 +328,10 @@ if __name__ == "__main__":
 
     # plt.savefig(filename+str(epsilon)+"_basic.pdf",bbox_inches='tight', pad_inches=0)
 
-    diag = compute_persistence_diagram(distance_matrix)
+    if useGamma:
+        diag = compute_persistence_diagram(distance_matrix, max_edge=gamma)
+    else:
+        diag = compute_persistence_diagram(distance_matrix, max_edge=epsilon)
 
     barcode = gudhi.plot_persistence_barcode(diag)
 

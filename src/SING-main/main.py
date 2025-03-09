@@ -176,6 +176,14 @@ def processStippleFile(filename, epsilon = 1.0, density = 0.0, shouldDraw = Fals
     
     points, xs, ys = readStipplefile(filename)
 
+    points_arr = np.array(points)
+
+    # Pick a reference point index
+    ref_idx = 100
+
+    # Run the analysis
+    analyzeReferencePointDistanceWithAxis(points_arr, ref_idx=ref_idx, density=0.0)
+
     # compute the pair-wise distances 
 
     dist_mat, lower_tri = computeSINGDistances(points, filename= filename + "_distmat.txt", write = False, density=density)
@@ -194,14 +202,30 @@ def processStippleFile(filename, epsilon = 1.0, density = 0.0, shouldDraw = Fals
         n_components, labels = connected_components(csgraph=adj_mat, directed=False, return_labels=True)
         print(f"Number of components: {n_components}")
         
-        drawPoints(plt, points, n_components, labels, 0.1, ax)
+        drawPoints(plt, points, n_components, labels, 2, ax)
 
         # save_labels(filename+"_SING.txt", points, labels)
         
 
     return points, dist_mat, lower_tri
 
-
+def analyzeReferencePointDistanceWithAxis(points, ref_idx=0, density=0.0):
+    """
+    1. Compute distance matrix using your custom metric (with gamma, angle-based, etc.).
+    2. Visualize distances from the reference point, plus the principal axis among its k_nn neighbors.
+    """
+    # Suppose we have your existing function:
+    # dist_mat, lower_tri = computeAvgKNNProximityDistances(...)
+    dist_mat, lower_tri = computeSINGDistances(
+        points, 
+        write=False, 
+        filename="",
+        density=density, 
+    )
+    
+    # Now plot
+    plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=ref_idx,
+                                   title=f"Distances + Axis (ref={ref_idx}")
 
 
 if __name__ == "__main__":

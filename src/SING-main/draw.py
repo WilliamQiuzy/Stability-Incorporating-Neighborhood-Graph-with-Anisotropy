@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import cm
+import matplotlib.colors as mcolors
 import numpy as np
 
 def createPlot(xlim = 0, ylim = 0, Xlim=1000, Ylim=1000):
@@ -76,3 +77,36 @@ def drawPoints(plt, points, n_components, labels, size=0.7, ax=None):
     ax.set_xlim(min_x, max_x)
     ax.set_ylim(min_y, max_y)
 
+def plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=0, title="Distance from Reference Point"):
+    """
+    Plots all points, colored by their metric distance from the reference point,
+    and overlays the principal axis (in red) computed from the reference point's k_nn neighbors.
+    """
+    # Distance from the reference point to every other point.
+    dists = dist_mat[ref_idx, :]
+
+    # Set up colormap and normalization.
+    norm = mcolors.Normalize(vmin=dists.min(), vmax=dists.max())
+    cmap = cm.viridis
+
+    fig, ax = plt.subplots(figsize=(6,6))
+
+    # Instead of drawing connecting lines, scatter all points colored by distance.
+    sc = ax.scatter(points[:,0], points[:,1], c=dists, cmap=cmap, s=2)
+    
+    # Highlight the reference point.
+    rx, ry = points[ref_idx]
+    ax.scatter(rx, ry, c='red', marker='*', s=3, label="Reference Point")
+
+    # Add a colorbar.
+    cbar = plt.colorbar(sc, ax=ax)
+    cbar.set_label("Distance from Reference Point")
+
+    # Draw the principal axis in red with an extended scale (scale=2.0).
+    # drawPrincipalAxis(ax, points, ref_idx, k_nn=k_nn, color='red', scale=2.0)
+
+    ax.set_aspect('equal', 'box')
+    ax.set_title(title)
+    ax.legend()
+    plt.tight_layout()
+    plt.show()

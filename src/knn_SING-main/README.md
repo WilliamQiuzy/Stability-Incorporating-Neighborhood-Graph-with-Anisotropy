@@ -4,7 +4,7 @@ We provide the basic functionality of SING.
 
 **Usage:**
 
-python main.py --filename --filetype --epsilon --density --drawEdges
+python main.py --filename --filetype --epsilon --k_nn --density --drawEdges
 
 
 **Parameters:**

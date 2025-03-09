@@ -1,10 +1,10 @@
-# SING: Stability-Incorporated Neighborhood Graph
+# OPTICS
 
-We provide the basic functionality of SING.
+We provide the basic functionality of OPTICS.
 
 **Usage:**
 
-python main.py --filename --filetype --epsilon --density --drawEdges
+python main.py --filename --filetype --epsilon --min_samples --drawEdges
 
 
 **Parameters:**
