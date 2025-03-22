@@ -96,7 +96,7 @@ def plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=0, title="Distance 
     
     # Highlight the reference point.
     rx, ry = points[ref_idx]
-    ax.scatter(rx, ry, c='red', marker='*', s=3, label="Reference Point")
+    ax.scatter(rx, ry, c='red', marker='*', s=5, label="Reference Point")
 
     # Add a colorbar.
     cbar = plt.colorbar(sc, ax=ax)

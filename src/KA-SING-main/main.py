@@ -1,6 +1,4 @@
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import matplotlib.colors as mcolors
 
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial.distance import pdist, squareform
@@ -24,10 +22,6 @@ def core_dist(points, k):
         ds, inds = tree.query(point, k)
         dists.append(ds[-1])
     return dists
-
-from sklearn.decomposition import PCA
-from scipy.spatial import cKDTree
-import numpy as np
 
 from sklearn.decomposition import PCA
 from scipy.spatial import cKDTree
@@ -79,47 +73,64 @@ def compute_angle(points, k_nn=3, max_k=7, variance_threshold=0.1):
             k += 1  # Add one more neighbor
     return angles
 
-
-
-def computeAvgKNNProximityDistances(points, k_nn=5, write=False, filename="", density=0.0, gamma=0.5):
+def computeKthNNProximityDistances(points, k_nn=5, write=False, filename="", density=0.0, gamma=0.8):
+    """
+    Compute a normalized proximity distance matrix using the distance to the k-th nearest neighbor.
+    
+    For each point a, let:
+       kth_nn(a) = distance from a to its k-th nearest neighbor (using Euclidean distance).
+    
+    Then, for any two points a and b, define:
+       norm_D(a,b) = Euclidean_distance(a,b) / ( kth_nn(a) + kth_nn(b) ).
+    
+    An edge will be included in the proximity graph if norm_D(a,b) < epsilon.
+    
+    Parameters:
+      points  : list/array of 2D points.
+      k_nn    : int, number of nearest neighbors to use (the k-th neighbor is used).
+      write   : bool, if True, saves the distance matrix to a file.
+      filename: str, file name to save the matrix if write==True.
+      
+    Returns:
+      dist_mat : full symmetric normalized distance matrix.
+      lower_tri: list of lists containing the lower-triangular part.
+    """
+    import numpy as np
+    from scipy.spatial import cKDTree
+    from scipy.spatial.distance import pdist, squareform
+    
     n = len(points)
     points_arr = np.array(points)
-    # Build KD-tree for fast neighbor queries.
+    # Build a KD-tree for fast neighbor queries.
     tree = cKDTree(points_arr)
-    # Query k_nn+1 nearest neighbors (first is self with distance 0).
+    # Query k_nn+1 neighbors (first neighbor is the point itself with distance 0).
     distances, indices = tree.query(points_arr, k=k_nn+1)
-    # Compute average distance (excluding self).
-    avg_knn = np.mean(distances[:, 1:], axis=1)  # shape (n,)
-    
-    # Compute principal direction angles for each point.
-    angles = compute_angle(points, k_nn=k_nn)  # array of shape (n,), in [0, pi)
+    # kth_nn is the distance to the k-th nearest neighbor.
+    kth_nn = distances[:, k_nn]  # shape: (n,)
     
     # Compute full pairwise Euclidean distance matrix.
     D = squareform(pdist(points_arr, metric='euclidean'))
-    # Compute initial normalized distance: d_norm = D / (knn(a) + knn(b))
-    sum_knn = avg_knn[:, None] + avg_knn[None, :]
-    norm_D = D / sum_knn
+    # Compute the sum of kth neighbor distances for each pair.
+    sum_nn = kth_nn[:, None] + kth_nn[None, :]
+    ratio_matrix = (np.maximum(kth_nn[:, None], kth_nn[None, :]) / 
+                    np.minimum(kth_nn[:, None], kth_nn[None, :]))**density
     
-    # Compute the density ratio for each pair:
-    # R(a,b) = (max(knn(a), knn(b)) / min(knn(a), knn(b)))^(density)
-    ratio_matrix = (np.maximum(avg_knn[:, None], avg_knn[None, :]) / 
-                    np.minimum(avg_knn[:, None], avg_knn[None, :]))**density
-    
+    angles = compute_angle(points, k_nn=k_nn)  # array of shape (n,), in [0, pi)
+
     angle_diff = np.abs(angles[:, None] - angles[None, :])
     angle_diff = np.minimum(angle_diff, np.pi - angle_diff)
     anisotropic_multiplier = gamma + (1 - gamma) * np.sin(angle_diff)
-    
-    # Final normalized distance matrix:
-    final_norm_D = norm_D * ratio_matrix * anisotropic_multiplier
-    # final_norm_D = norm_D * anisotropic_multiplier
+
+    # Normalize the distance matrix.
+    norm_D = D / sum_nn * ratio_matrix * anisotropic_multiplier
     
     # Build lower triangular list.
-    lower_tri = [list(final_norm_D[i, :i]) for i in range(n)]
+    lower_tri = [list(norm_D[i, :i]) for i in range(n)]
     
     if write:
-        np.savetxt(filename, final_norm_D, delimiter=",")
+        np.savetxt(filename, norm_D, delimiter=",")
     
-    return final_norm_D, lower_tri
+    return norm_D, lower_tri
 
 
 ##### circle metric SING computation
@@ -244,28 +255,27 @@ def processBasicDiskFile(filename, epsilon = 1.0, shouldDraw = True, shouldDrawE
 
 # process stipple file, that only contains 2D coordinates
 
-def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, gamma=0.5, useGamma=False, shouldDraw = False, shouldDrawEdges = False):
+def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, shouldDraw = False, shouldDrawEdges = False):
     
     points, xs, ys = readStipplefile(filename)
 
     points_arr = np.array(points)
 
     # Pick a reference point index
-    ref_idx = 100
+    ref_idx = 15
 
     # Run the analysis
-    analyzeReferencePointDistanceWithAxis(points_arr, ref_idx=ref_idx, k_nn=5, density=0.0, gamma=0.5)
+    analyzeReferencePointDistanceWithAxis(points_arr, ref_idx=ref_idx, density=0.0, k_nn=k_nn)
 
     # compute the pair-wise distances 
 
-    dist_mat, lower_tri = computeAvgKNNProximityDistances(points, k_nn=k_nn, filename= filename + "_distmat.txt", write = False, density=density, gamma=gamma)
+    dist_mat, lower_tri = computeKthNNProximityDistances(points, k_nn=k_nn, filename= filename + "_distmat.txt", write = False, density=density)
     
     # visualisation for the points, the clusters, and possibly the edges
 
     if(shouldDraw):
         plt, ax = createBasicPlot()
-        threshold = gamma if useGamma else epsilon
-        edges, adj_mat = extractSINGEdges(dist_mat, threshold)
+        edges, adj_mat = extractSINGEdges(dist_mat, epsilon)
 
         if(shouldDrawEdges):
             drawEdges(ax, edges, points)
@@ -282,25 +292,24 @@ def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, gamma=0.5, 
 
     return points, dist_mat, lower_tri
 
-def analyzeReferencePointDistanceWithAxis(points, ref_idx=0, k_nn=5, density=0.0, gamma=0.5):
+def analyzeReferencePointDistanceWithAxis(points, ref_idx=0, density=0.0, k_nn=5):
     """
     1. Compute distance matrix using your custom metric (with gamma, angle-based, etc.).
     2. Visualize distances from the reference point, plus the principal axis among its k_nn neighbors.
     """
     # Suppose we have your existing function:
     # dist_mat, lower_tri = computeAvgKNNProximityDistances(...)
-    dist_mat, lower_tri = computeAvgKNNProximityDistances(
+    dist_mat, lower_tri = computeKthNNProximityDistances(
         points, 
-        k_nn=k_nn, 
         write=False, 
         filename="",
         density=density, 
-        gamma=gamma
+        k_nn=k_nn
     )
     
     # Now plot
-    plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=ref_idx, k_nn=k_nn,
-                                   title=f"Distances + Axis (ref={ref_idx}, gamma={gamma})")
+    plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=ref_idx,
+                                   title=f"Distances + Axis (ref={ref_idx}")
 
 def compute_cluster_density_terms(labels, n_components, avg_knn):
     """
@@ -322,7 +331,7 @@ def compute_cluster_density_terms(labels, n_components, avg_knn):
     cluster_density = max_d / (min_d + eps)
     return cluster_density
 
-def merge_clusters_by_density(labels, cluster_density, density_threshold=0.1):
+def merge_clusters_by_density(labels, cluster_density, density_threshold=0.15):
     """
     Merge clusters whose density terms differ by less than density_threshold.
     
@@ -378,10 +387,6 @@ if __name__ == "__main__":
     parser.add_argument("--drawEdges", type=bool, default=False, help="Draw SING edges")
     parser.add_argument("--k_nn", type=int, default=5, help="Number of nearest neighbors for distance computation")
     parser.add_argument("--density", type=float, default=0.0, help="density term for proximity metrics")
-    parser.add_argument("--xaxis", type=str, choices=["epsilon", "gamma"], default="epsilon", 
-                        help="Choose x-axis variable for TDA (epsilon or gamma)")
-    parser.add_argument("--gamma", type=float, default=0.5, 
-                        help="Gamma value for the angle term in distance computation and as TDA x-axis if selected")
     args = parser.parse_args()
 
     filename = args.filename
@@ -390,8 +395,6 @@ if __name__ == "__main__":
     shouldDrawEdges = args.drawEdges
     k_nn = args.k_nn
     density = args.density
-    gamma = args.gamma
-    useGamma = (args.xaxis == "gamma")
 
     shouldDraw = True
 
@@ -399,25 +402,22 @@ if __name__ == "__main__":
 
     distance_matrix = []    
     if filetype == "stipples":
-        points, dist_mat, lower_tri = processStippleFile(filename, k_nn=k_nn, density=density, epsilon=epsilon, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges, gamma=gamma, useGamma=useGamma)
+        points, distance_matrix, lower_tri = processStippleFile(filename, k_nn=k_nn, density=density, epsilon=epsilon, shouldDraw = shouldDraw, shouldDrawEdges = shouldDrawEdges)
     elif filetype == "species":
-        points, radii, dist_mat, lower_tri = processDiskFile(filename, epsilon, shouldDrawEdges = shouldDrawEdges)
+        points, radii, distance_matrix, lower_tri = processDiskFile(filename, epsilon, shouldDrawEdges = shouldDrawEdges)
     elif filetype == "disks":
-        points, dist_mat, lower_tri = processBasicDiskFile(filename, epsilon, shouldDrawEdges = shouldDrawEdges)
+        points, distance_matrix, lower_tri = processBasicDiskFile(filename, epsilon, shouldDrawEdges = shouldDrawEdges)
 
     # plt.savefig(filename+str(epsilon)+"_basic.pdf",bbox_inches='tight', pad_inches=0)
 
-    if useGamma:
-        diag = compute_persistence_diagram(distance_matrix, max_edge=gamma)
-    else:
-        diag = compute_persistence_diagram(distance_matrix, max_edge=epsilon)
+    diag = compute_persistence_diagram(distance_matrix)
 
     barcode = gudhi.plot_persistence_barcode(diag)
 
     if(shouldDraw):
         plt, ax = createBasicPlot()
-        threshold = gamma if useGamma else epsilon
-        edges, adj_mat = extractSINGEdges(dist_mat, threshold)
+        threshold = epsilon
+        edges, adj_mat = extractSINGEdges(distance_matrix, threshold)
 
         if(shouldDrawEdges):
             drawEdges(ax, edges, points)
@@ -436,13 +436,15 @@ if __name__ == "__main__":
         # Compute density term for each cluster.
         cluster_density = compute_cluster_density_terms(labels, n_components, avg_knn)
         # Merge clusters whose density terms differ by less than the threshold.
-        merged_labels = merge_clusters_by_density(labels, cluster_density, density_threshold=0.2)
+        merged_labels = merge_clusters_by_density(labels, cluster_density, density_threshold=0.3)
         n_merged = len(np.unique(merged_labels))
         print(f"Number of merged clusters: {n_merged}")
         # -------------------------------------------------------
         
         drawPoints(plt, points, n_merged, merged_labels, 2, ax)
         plt.show()
+
+
 
 
     

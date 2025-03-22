@@ -27,6 +27,7 @@ from sklearn.decomposition import PCA
 from scipy.spatial import cKDTree
 import numpy as np
 
+
 def computeKthNNProximityDistances(points, k_nn=5, write=False, filename="", density=0.0):
     """
     Compute a normalized proximity distance matrix using the distance to the k-th nearest neighbor.
@@ -231,7 +232,70 @@ def processStippleFile(filename, k_nn=5, epsilon = 1.0, density=0.0, shouldDraw 
 
     return points, dist_mat, lower_tri
 
+def compute_cluster_density_terms(labels, n_components, avg_knn):
+    """
+    Compute a density term for each cluster as:
+      density_term = (max(avg_knn in cluster)) / (min(avg_knn in cluster) + eps)
+    """
+    eps = 1e-9
+    # Initialize with extremes
+    max_d = np.full(n_components, -np.inf)
+    min_d = np.full(n_components, np.inf)
+    
+    for i, lab in enumerate(labels):
+        d = avg_knn[i]
+        if d > max_d[lab]:
+            max_d[lab] = d
+        if d < min_d[lab]:
+            min_d[lab] = d
+            
+    cluster_density = max_d / (min_d + eps)
+    return cluster_density
 
+def merge_clusters_by_density(labels, cluster_density, density_threshold=0.1):
+    """
+    Merge clusters whose density terms differ by less than density_threshold.
+    
+    Parameters:
+      labels          : array of initial cluster labels (from connected_components)
+      cluster_density : array of length n_components, density term per cluster.
+      density_threshold : float, merging threshold.
+    
+    Returns:
+      new_labels : merged cluster labels for each point.
+    """
+    n_components = len(cluster_density)
+    parent = list(range(n_components))
+    
+    def find(x):
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
+    
+    def union(a, b):
+        rootA = find(a)
+        rootB = find(b)
+        if rootA != rootB:
+            parent[rootB] = rootA
+            
+    # Compare each pair of clusters and merge if density terms are similar.
+    for c1 in range(n_components):
+        for c2 in range(c1+1, n_components):
+            if abs(cluster_density[c1] - cluster_density[c2]) < density_threshold:
+                union(c1, c2)
+    
+    # Remap labels to consecutive numbers.
+    new_labels = np.zeros_like(labels)
+    cluster_map = {}
+    new_label = 0
+    for i, lab in enumerate(labels):
+        root = find(lab)
+        if root not in cluster_map:
+            cluster_map[root] = new_label
+            new_label += 1
+        new_labels[i] = cluster_map[root]
+    
+    return new_labels
 
 
 if __name__ == "__main__":
@@ -271,7 +335,34 @@ if __name__ == "__main__":
 
     barcode = gudhi.plot_persistence_barcode(diag)
 
-    if shouldDraw:
+    if(shouldDraw):
+        plt, ax = createBasicPlot()
+        threshold = epsilon
+        edges, adj_mat = extractSINGEdges(distance_matrix, threshold)
+
+        if(shouldDrawEdges):
+            drawEdges(ax, edges, points)
+
+        # extract the SING connected components
+        n_components, labels = connected_components(csgraph=adj_mat, directed=False, return_labels=True)
+        print(f"Initial number of components: {n_components}")
+        
+        # ----- New: Merge clusters by similar density term -----
+        # Recompute the average kNN distance for each point.
+        points_arr = np.array(points)
+        tree = cKDTree(points_arr)
+        distances, _ = tree.query(points_arr, k=k_nn+1)
+        avg_knn = np.mean(distances[:,1:], axis=1)
+        
+        # Compute density term for each cluster.
+        cluster_density = compute_cluster_density_terms(labels, n_components, avg_knn)
+        # Merge clusters whose density terms differ by less than the threshold.
+        merged_labels = merge_clusters_by_density(labels, cluster_density, density_threshold=0.6)
+        n_merged = len(np.unique(merged_labels))
+        print(f"Number of merged clusters: {n_merged}")
+        # -------------------------------------------------------
+        
+        drawPoints(plt, points, n_merged, merged_labels, 2, ax)
         plt.show()
 
 

@@ -179,7 +179,7 @@ def processStippleFile(filename, epsilon = 1.0, density = 0.0, shouldDraw = Fals
     points_arr = np.array(points)
 
     # Pick a reference point index
-    ref_idx = 100
+    ref_idx = 250
 
     # Run the analysis
     analyzeReferencePointDistanceWithAxis(points_arr, ref_idx=ref_idx, density=0.0)

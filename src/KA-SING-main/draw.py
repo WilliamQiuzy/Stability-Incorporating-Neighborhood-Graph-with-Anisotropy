@@ -3,49 +3,6 @@ from matplotlib.pyplot import cm
 import matplotlib.colors as mcolors
 import numpy as np
 
-from scipy.spatial import cKDTree
-from sklearn.decomposition import PCA
-
-def drawPrincipalAxis(ax, points, ref_idx, k_nn=5, color='yellow', scale=1.0):
-    """
-    Draws the principal axis (1D PCA direction) for 'ref_idx' and its k_nn neighbors.
-    
-    Parameters:
-      ax       : matplotlib axes to draw on
-      points   : Nx2 array of 2D coordinates
-      ref_idx  : index of the reference point in 'points'
-      k_nn     : number of nearest neighbors to consider
-      color    : line color for the axis
-      scale    : how long to draw the axis line segments
-    """
-    # Build a KD-tree for nearest neighbors
-    tree = cKDTree(points)
-    
-    # Query k_nn + 1 because the first neighbor is the point itself
-    dists, neighbor_idxs = tree.query(points[ref_idx], k=k_nn+1)
-    
-    # Exclude the point itself; we only want the neighbors
-    neighbor_coords = points[neighbor_idxs[1:]]
-    
-    # Perform PCA on these neighbors
-    pca = PCA(n_components=1)
-    pca.fit(neighbor_coords)
-    principal = pca.components_[0]  # the main direction (length=1 vector)
-    
-    # Optionally scale by average neighbor distance for a "nice" line length
-    line_len = scale * np.mean(dists[1:])
-    
-    # Draw the axis in both directions from the reference point
-    ref_point = points[ref_idx]
-    end_pos = ref_point + line_len * principal
-    end_neg = ref_point - line_len * principal
-    
-    ax.plot([ref_point[0], end_pos[0]], [ref_point[1], end_pos[1]], 
-            color=color, linewidth=2)
-    ax.plot([ref_point[0], end_neg[0]], [ref_point[1], end_neg[1]], 
-            color=color, linewidth=2)
-
-
 def createPlot(xlim = 0, ylim = 0, Xlim=1000, Ylim=1000):
     
     fig, ax = plt.subplots()
@@ -120,7 +77,7 @@ def drawPoints(plt, points, n_components, labels, size=0.7, ax=None):
     ax.set_xlim(min_x, max_x)
     ax.set_ylim(min_y, max_y)
 
-def plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=0, k_nn=5, title="Distance from Reference Point"):
+def plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=0, title="Distance from Reference Point"):
     """
     Plots all points, colored by their metric distance from the reference point,
     and overlays the principal axis (in red) computed from the reference point's k_nn neighbors.
@@ -139,7 +96,7 @@ def plotReferenceDistancesWithAxis(points, dist_mat, ref_idx=0, k_nn=5, title="D
     
     # Highlight the reference point.
     rx, ry = points[ref_idx]
-    ax.scatter(rx, ry, c='red', marker='*', s=3, label="Reference Point")
+    ax.scatter(rx, ry, c='red', marker='*', s=5, label="Reference Point")
 
     # Add a colorbar.
     cbar = plt.colorbar(sc, ax=ax)

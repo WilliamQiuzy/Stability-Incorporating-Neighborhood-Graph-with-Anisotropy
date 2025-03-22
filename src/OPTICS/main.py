@@ -48,7 +48,7 @@ def optics(X, eps, min_pts):
 
     def normalized_distance(i, j):
         d = np.linalg.norm(X[i] - X[j])
-        return d / (nn[i] + nn[j] + 1e-10)
+        return d
         # return d
 
     def update(idx, neighbors, seeds):
@@ -405,7 +405,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--filename", type=str, required=True, help="Input filename")
     parser.add_argument("--filetype", type=str, choices=["stipples", "species", "disks"], required=True, help="Input file type")
-    parser.add_argument("--eps", type=float, default=0.05, help="eps for neighbor search (in original space)")
+    parser.add_argument("--eps", type=float, default=np.inf, help="eps for neighbor search (in original space)")
     parser.add_argument("--min_pts", type=int, default=5, help="Minimum points to form a dense region")
     parser.add_argument("--extraction", type=str, choices=["xi", "auto", "manual"], default="manual",
                         help="Cluster extraction method: 'xi' for xi-based, 'auto' for the automatic method, 'manual' for manual")
@@ -475,7 +475,6 @@ if __name__ == "__main__":
     n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
     # Use smaller dot size.
     drawPoints(plt_obj, points, n_clusters, labels, size=2, ax=ax)
-    plt_obj.title("OPTICS Clustering Result (" + args.extraction + " extraction)")
     plt_obj.show()
 
     # Suppose X is your (n_points,2) data and eps is your neighbor radius.
